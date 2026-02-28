@@ -1,0 +1,51 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  @apply bg-gray-900 text-white min-h-screen;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+@layer components {
+  .btn-primary {
+    @apply bg-poker-gold text-black font-semibold py-3 px-6 rounded-lg 
+           hover:bg-yellow-500 transition-colors duration-200
+           disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  
+  .btn-secondary {
+    @apply bg-gray-700 text-white font-medium py-3 px-6 rounded-lg
+           hover:bg-gray-600 transition-colors duration-200
+           border border-gray-600;
+  }
+  
+  .btn-danger {
+    @apply bg-poker-red text-white font-medium py-2 px-4 rounded-lg
+           hover:bg-red-700 transition-colors duration-200;
+  }
+  
+  .input-field {
+    @apply w-full bg-gray-800 border border-gray-600 rounded-lg px-4 py-3
+           text-white placeholder-gray-400
+           focus:outline-none focus:ring-2 focus:ring-poker-gold focus:border-transparent;
+  }
+  
+  .card {
+    @apply bg-gray-800 rounded-xl p-6 border border-gray-700;
+  }
+  
+  .chip {
+    @apply inline-flex items-center justify-center w-10 h-10 rounded-full
+           bg-poker-red border-2 border-poker-gold text-white font-bold text-sm;
+  }
+}
+
+@keyframes chip-spin {
+  from { transform: rotateY(0deg); }
+  to { transform: rotateY(360deg); }
+}
+
+.loading-chip {
+  animation: chip-spin 1s ease-in-out infinite;
+}
