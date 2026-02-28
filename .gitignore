@@ -8,6 +8,7 @@ dist/
 build/
 out/
 *.jar
+!gradle-wrapper.jar
 
 # Gradle
 .gradle/
