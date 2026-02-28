@@ -10,7 +10,7 @@ interface I18nState {
 
 export const useI18n = create<I18nState>()(
   persist(
-    (set, get) => ({
+    (set) => ({
       locale: 'en',
       setLocale: (locale: Locale) => set({ locale, t: locales[locale] }),
       t: locales.en,

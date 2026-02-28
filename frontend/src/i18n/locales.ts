@@ -213,7 +213,7 @@ export const locales = {
       settleFailed: '结算失败',
     },
   },
-} as const
+}
 
 export type Locale = keyof typeof locales
 export type Translations = typeof locales.en
