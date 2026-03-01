@@ -31,7 +31,6 @@ services:
         condition: service_healthy
     networks:
       - potlog-internal
-      - caddy-network
 
   frontend:
     image: ghcr.io/goagain/potlog/frontend:latest
@@ -43,7 +42,10 @@ services:
       - backend
     networks:
       - potlog-internal
-      - caddy-network
+      - reverse_proxy
+    labels:
+      caddy: potlog.goagain.me
+      caddy.reverse_proxy: "{{upstreams 3000}}"
 
 volumes:
   mongodb_data:
@@ -51,5 +53,5 @@ volumes:
 networks:
   potlog-internal:
     driver: bridge
-  caddy-network:
+  reverse_proxy:
     external: true
