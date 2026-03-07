@@ -14,21 +14,27 @@ class SessionService {
     private val logger = LoggerFactory.getLogger(SessionService::class.java)
     
     companion object {
-        private const val NUMERIC_ID_LENGTH = 6
         private const val MAX_RETRY_ATTEMPTS = 10
-        private const val MIN_NUMERIC_ID = 100000
-        private const val MAX_NUMERIC_ID = 999999
+        private const val MIN_DIGITS = 6
+        private const val MAX_DIGITS = 10
         private const val ADMIN_PIN_MIN = 0
         private const val ADMIN_PIN_MAX = 9999
     }
     
     /**
-     * 生成唯一的 6 位数字 ID
-     * 使用随机生成 + MongoDB 唯一索引冲突重试机制
+     * 生成指定位数的随机数字 ID
      */
-    private fun generateNumericId(): String {
-        val randomNumber = Random.nextInt(MIN_NUMERIC_ID, MAX_NUMERIC_ID + 1)
-        return randomNumber.toString()
+    private fun generateNumericId(digits: Int): String {
+        val min = when (digits) {
+            6 -> 100_000L
+            7 -> 1_000_000L
+            8 -> 10_000_000L
+            9 -> 100_000_000L
+            10 -> 1_000_000_000L
+            else -> 100_000L
+        }
+        val max = min * 10 - 1
+        return Random.nextLong(min, max + 1).toString()
     }
     
     /**
@@ -63,34 +69,32 @@ class SessionService {
      * 处理 MongoDB 唯一索引冲突，自动重试生成新 ID
      */
     suspend fun createSession(stakes: String, adminOnly: Boolean = false): Pair<PokerSession, String?> {
-        var attempts = 0
         val adminPassword = if (adminOnly) generateAdminPassword() else null
-        
-        while (attempts < MAX_RETRY_ATTEMPTS) {
-            attempts++
-            val numericId = generateNumericId()
-            
-            val session = PokerSession(
-                numericId = numericId,
-                stakes = stakes,
-                adminOnly = adminOnly,
-                adminPassword = adminPassword
-            )
-            
-            try {
-                MongoDB.sessions.insertOne(session)
-                logger.info("Created session with numericId: $numericId (attempt: $attempts)")
-                return session to adminPassword
-            } catch (e: Exception) {
-                if (MongoDB.isDuplicateKeyException(e)) {
-                    logger.warn("Duplicate numericId collision: $numericId, retrying... (attempt: $attempts)")
-                    continue
+
+        for (digits in MIN_DIGITS..MAX_DIGITS) {
+            for (attempt in 1..MAX_RETRY_ATTEMPTS) {
+                val numericId = generateNumericId(digits)
+                val session = PokerSession(
+                    numericId = numericId,
+                    stakes = stakes,
+                    adminOnly = adminOnly,
+                    adminPassword = adminPassword
+                )
+                try {
+                    MongoDB.sessions.insertOne(session)
+                    logger.info("Created session with numericId: $numericId (${digits} digits)")
+                    return session to adminPassword
+                } catch (e: Exception) {
+                    if (MongoDB.isDuplicateKeyException(e)) {
+                        logger.warn("Duplicate numericId collision: $numericId, retrying... ($digits digits, attempt: $attempt)")
+                        continue
+                    }
+                    throw e
                 }
-                throw e
             }
         }
-        
-        throw IllegalStateException("Failed to generate unique numericId after $MAX_RETRY_ATTEMPTS attempts")
+
+        throw IllegalStateException("Failed to generate unique numericId after trying $MIN_DIGITS-$MAX_DIGITS digits")
     }
     
     /**

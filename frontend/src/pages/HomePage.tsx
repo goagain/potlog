@@ -38,7 +38,7 @@ export default function HomePage() {
 
   const handleJoin = () => {
     const id = joinId.trim()
-    if (id.length === 6 && /^\d+$/.test(id)) {
+    if (id.length >= 6 && id.length <= 10 && /^\d+$/.test(id)) {
       navigate(`/${id}`)
     } else {
       setError(t.home.invalidId)
@@ -98,14 +98,14 @@ export default function HomePage() {
             <input
               type="text"
               value={joinId}
-              onChange={(e) => setJoinId(e.target.value.replace(/\D/g, '').slice(0, 6))}
+              onChange={(e) => setJoinId(e.target.value.replace(/\D/g, '').slice(0, 10))}
               placeholder={t.home.enterIdPlaceholder}
               className="input-field flex-1"
-              maxLength={6}
+              maxLength={10}
             />
             <button
               onClick={handleJoin}
-              disabled={joinId.length !== 6}
+              disabled={!(joinId.length >= 6 && joinId.length <= 10)}
               className="btn-secondary"
             >
               {t.home.join}
