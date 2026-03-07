@@ -1,9 +1,22 @@
+import { useState, useEffect } from 'react'
 import { useI18n, type Locale } from '../i18n'
 
 const GITHUB_REPO = 'goagain/potlog'
 
 export default function Header() {
   const { locale, setLocale } = useI18n()
+  const [starCount, setStarCount] = useState<number | null>(null)
+
+  useEffect(() => {
+    fetch(`https://api.github.com/repos/${GITHUB_REPO}`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (typeof data.stargazers_count === 'number') {
+          setStarCount(data.stargazers_count)
+        }
+      })
+      .catch(() => {})
+  }, [])
 
   const toggleLocale = () => {
     const newLocale: Locale = locale === 'en' ? 'zh' : 'en'
@@ -35,7 +48,7 @@ export default function Header() {
         <svg className="w-4 h-4 text-yellow-400" fill="currentColor" viewBox="0 0 24 24">
           <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
         </svg>
-        <span>Star</span>
+        <span>Star{starCount !== null ? ` ${starCount}` : ''}</span>
       </a>
       
       <button
