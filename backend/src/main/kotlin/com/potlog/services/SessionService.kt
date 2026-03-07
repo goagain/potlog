@@ -32,18 +32,20 @@ class SessionService {
     }
     
     /**
-     * 生成 4 位数管理员密码
+     * 生成 4 位数管理员密码 (0000-9999)
      */
     private fun generateAdminPassword(): String {
-        return Random.nextInt(ADMIN_PIN_MIN, ADMIN_PIN_MAX + 1).toString()
+        return Random.nextInt(ADMIN_PIN_MIN, ADMIN_PIN_MAX + 1).toString().padStart(4, '0')
     }
+
+    private fun normalizePin(pin: String?): String = (pin ?: "").padStart(4, '0')
     
     /**
      * 验证管理员密码
      */
     fun requireAdmin(session: PokerSession, adminPassword: String?) {
         if (!session.adminOnly) return
-        if (adminPassword == null || adminPassword != session.adminPassword) {
+        if (adminPassword == null || normalizePin(adminPassword) != normalizePin(session.adminPassword)) {
             throw IllegalAccessException("Admin password required")
         }
     }
@@ -53,7 +55,7 @@ class SessionService {
      */
     fun verifyAdmin(session: PokerSession, adminPassword: String?): Boolean {
         if (!session.adminOnly) return true
-        return adminPassword != null && adminPassword == session.adminPassword
+        return adminPassword != null && normalizePin(adminPassword) == normalizePin(session.adminPassword)
     }
     
     /**
