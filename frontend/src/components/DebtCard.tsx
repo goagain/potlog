@@ -6,7 +6,7 @@ import { useI18n } from '../i18n'
 interface DebtCardProps {
   debt: Debt
   players: Player[]
-  onSettle: (amount: number) => Promise<void>
+  onSettle?: (amount: number) => Promise<void>
 }
 
 export default function DebtCard({ debt, players, onSettle }: DebtCardProps) {
@@ -20,6 +20,7 @@ export default function DebtCard({ debt, players, onSettle }: DebtCardProps) {
   const isFullySettled = debt.settled || remainingAmount <= 0
 
   const handleSettle = async () => {
+    if (!onSettle) return
     setLoading(true)
     try {
       await onSettle(remainingAmount)
@@ -61,6 +62,7 @@ export default function DebtCard({ debt, players, onSettle }: DebtCardProps) {
       {!isFullySettled && (
         <div className="mt-3 flex items-center justify-between">
           <span className="text-xs text-gray-500">{t.debt.settleHint}</span>
+          {onSettle && (
           <button
             onClick={handleSettle}
             disabled={loading}
@@ -68,6 +70,7 @@ export default function DebtCard({ debt, players, onSettle }: DebtCardProps) {
           >
             {loading ? t.common.processing : t.debt.markSettled}
           </button>
+          )}
         </div>
       )}
       

@@ -15,10 +15,10 @@ fun Route.sessionRoutes(sessionService: SessionService, settlementService: Settl
         
         post {
             val request = call.receive<CreateSessionRequest>()
-            val session = sessionService.createSession(request.stakes)
+            val (session, adminPassword) = sessionService.createSession(request.stakes, request.adminOnly)
             call.respond(
                 HttpStatusCode.Created,
-                CreateSessionResponse(session.numericId, session)
+                CreateSessionResponse(session.numericId, session, adminPassword)
             )
         }
         
@@ -29,7 +29,19 @@ fun Route.sessionRoutes(sessionService: SessionService, settlementService: Settl
             val session = sessionService.getSession(numericId)
                 ?: return@get call.respond(HttpStatusCode.NotFound, ErrorResponse("NOT_FOUND", "Session not found"))
             
-            call.respond(session)
+            call.respond(session.withoutAdminPassword())
+        }
+        
+        post("/{numericId}/verify-admin") {
+            val numericId = call.parameters["numericId"]
+                ?: return@post call.respond(HttpStatusCode.BadRequest, ErrorResponse("BAD_REQUEST", "Missing numericId"))
+            
+            val request = call.receive<VerifyAdminRequest>()
+            val session = sessionService.getSession(numericId)
+                ?: return@post call.respond(HttpStatusCode.NotFound, ErrorResponse("NOT_FOUND", "Session not found"))
+            
+            val valid = sessionService.verifyAdmin(session, request.adminPassword)
+            call.respond(VerifyAdminResponse(valid))
         }
         
         post("/{numericId}/players") {
@@ -41,7 +53,9 @@ fun Route.sessionRoutes(sessionService: SessionService, settlementService: Settl
             try {
                 val session = sessionService.addPlayer(numericId, request)
                     ?: return@post call.respond(HttpStatusCode.NotFound, ErrorResponse("NOT_FOUND", "Session not found"))
-                call.respond(session)
+                call.respond(session!!.withoutAdminPassword())
+            } catch (e: IllegalAccessException) {
+                call.respond(HttpStatusCode.Forbidden, ErrorResponse("FORBIDDEN", e.message ?: "Admin password required"))
             } catch (e: IllegalStateException) {
                 call.respond(HttpStatusCode.Conflict, ErrorResponse("CONFLICT", e.message ?: "Cannot modify settled session"))
             }
@@ -56,7 +70,9 @@ fun Route.sessionRoutes(sessionService: SessionService, settlementService: Settl
             try {
                 val session = sessionService.rebuy(numericId, request)
                     ?: return@post call.respond(HttpStatusCode.NotFound, ErrorResponse("NOT_FOUND", "Session not found"))
-                call.respond(session)
+                call.respond(session!!.withoutAdminPassword())
+            } catch (e: IllegalAccessException) {
+                call.respond(HttpStatusCode.Forbidden, ErrorResponse("FORBIDDEN", e.message ?: "Admin password required"))
             } catch (e: IllegalArgumentException) {
                 call.respond(HttpStatusCode.BadRequest, ErrorResponse("BAD_REQUEST", e.message ?: "Invalid request"))
             } catch (e: IllegalStateException) {
@@ -72,7 +88,9 @@ fun Route.sessionRoutes(sessionService: SessionService, settlementService: Settl
             
             try {
                 val session = settlementService.settle(numericId, request)
-                call.respond(session)
+                call.respond(session.withoutAdminPassword())
+            } catch (e: IllegalAccessException) {
+                call.respond(HttpStatusCode.Forbidden, ErrorResponse("FORBIDDEN", e.message ?: "Admin password required"))
             } catch (e: IllegalArgumentException) {
                 call.respond(HttpStatusCode.BadRequest, ErrorResponse("BAD_REQUEST", e.message ?: "Invalid request"))
             } catch (e: IllegalStateException) {
@@ -84,9 +102,13 @@ fun Route.sessionRoutes(sessionService: SessionService, settlementService: Settl
             val numericId = call.parameters["numericId"]
                 ?: return@post call.respond(HttpStatusCode.BadRequest, ErrorResponse("BAD_REQUEST", "Missing numericId"))
             
+            val request = call.receiveOrNull<ReopenRequest>() ?: ReopenRequest()
+            
             try {
-                val session = settlementService.reopenSession(numericId)
-                call.respond(session)
+                val session = settlementService.reopenSession(numericId, request.adminPassword)
+                call.respond(session.withoutAdminPassword())
+            } catch (e: IllegalAccessException) {
+                call.respond(HttpStatusCode.Forbidden, ErrorResponse("FORBIDDEN", e.message ?: "Admin password required"))
             } catch (e: IllegalArgumentException) {
                 call.respond(HttpStatusCode.BadRequest, ErrorResponse("BAD_REQUEST", e.message ?: "Invalid request"))
             } catch (e: IllegalStateException) {
@@ -102,7 +124,9 @@ fun Route.sessionRoutes(sessionService: SessionService, settlementService: Settl
             
             try {
                 val session = settlementService.markDebtSettled(numericId, request)
-                call.respond(session)
+                call.respond(session.withoutAdminPassword())
+            } catch (e: IllegalAccessException) {
+                call.respond(HttpStatusCode.Forbidden, ErrorResponse("FORBIDDEN", e.message ?: "Admin password required"))
             } catch (e: IllegalArgumentException) {
                 call.respond(HttpStatusCode.BadRequest, ErrorResponse("BAD_REQUEST", e.message ?: "Invalid request"))
             }
@@ -130,7 +154,9 @@ fun Route.sessionRoutes(sessionService: SessionService, settlementService: Settl
             try {
                 val session = sessionService.addTransfer(numericId, request)
                     ?: return@post call.respond(HttpStatusCode.NotFound, ErrorResponse("NOT_FOUND", "Session not found"))
-                call.respond(session)
+                call.respond(session!!.withoutAdminPassword())
+            } catch (e: IllegalAccessException) {
+                call.respond(HttpStatusCode.Forbidden, ErrorResponse("FORBIDDEN", e.message ?: "Admin password required"))
             } catch (e: IllegalArgumentException) {
                 call.respond(HttpStatusCode.BadRequest, ErrorResponse("BAD_REQUEST", e.message ?: "Invalid request"))
             } catch (e: IllegalStateException) {
@@ -144,10 +170,15 @@ fun Route.sessionRoutes(sessionService: SessionService, settlementService: Settl
             val transferId = call.parameters["transferId"]
                 ?: return@delete call.respond(HttpStatusCode.BadRequest, ErrorResponse("BAD_REQUEST", "Missing transferId"))
             
+            val adminPassword = call.request.header("X-Admin-Password")
+                ?: try { call.receiveOrNull<AdminAuthBody>()?.adminPassword } catch (_: Exception) { null }
+            
             try {
-                val session = sessionService.removeTransfer(numericId, transferId)
+                val session = sessionService.removeTransfer(numericId, transferId, adminPassword)
                     ?: return@delete call.respond(HttpStatusCode.NotFound, ErrorResponse("NOT_FOUND", "Session not found"))
-                call.respond(session)
+                call.respond(session.withoutAdminPassword())
+            } catch (e: IllegalAccessException) {
+                call.respond(HttpStatusCode.Forbidden, ErrorResponse("FORBIDDEN", e.message ?: "Admin password required"))
             } catch (e: IllegalArgumentException) {
                 call.respond(HttpStatusCode.BadRequest, ErrorResponse("BAD_REQUEST", e.message ?: "Invalid request"))
             } catch (e: IllegalStateException) {

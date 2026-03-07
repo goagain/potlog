@@ -38,6 +38,7 @@ export interface PokerSession {
   numericId: string
   status: 'ACTIVE' | 'SETTLED'
   stakes: string
+  adminOnly?: boolean
   players: Player[]
   logs: TransactionLog[]
   transfers: DirectTransfer[]
@@ -49,6 +50,7 @@ export interface PokerSession {
 export interface CreateSessionResponse {
   numericId: string
   session: PokerSession
+  adminPassword?: string
 }
 
 export interface HistoryItem {

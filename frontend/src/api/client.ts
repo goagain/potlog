@@ -2,13 +2,16 @@ import type { PokerSession, CreateSessionResponse, BalanceMode, Debt, DirectTran
 
 const API_BASE = '/api'
 
-async function request<T>(url: string, options?: RequestInit): Promise<T> {
+async function request<T>(url: string, options?: RequestInit & { adminPassword?: string | null }): Promise<T> {
+  const { adminPassword, ...restOptions } = options ?? {}
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...(restOptions.headers as Record<string, string>),
+  }
+  if (adminPassword) headers['X-Admin-Password'] = adminPassword
   const response = await fetch(`${API_BASE}${url}`, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...options?.headers,
-    },
+    ...restOptions,
+    headers,
   })
   
   if (!response.ok) {
@@ -19,36 +22,50 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
   return response.json()
 }
 
+function withAdminPassword(body: Record<string, unknown>, adminPassword?: string | null) {
+  if (adminPassword != null) {
+    return { ...body, adminPassword }
+  }
+  return body
+}
+
 export const api = {
-  createSession: (stakes: string): Promise<CreateSessionResponse> =>
+  createSession: (stakes: string, adminOnly = false): Promise<CreateSessionResponse> =>
     request('/sessions', {
       method: 'POST',
-      body: JSON.stringify({ stakes }),
+      body: JSON.stringify({ stakes, adminOnly }),
+    }),
+
+  verifyAdmin: (numericId: string, adminPassword: string): Promise<{ valid: boolean }> =>
+    request(`/sessions/${numericId}/verify-admin`, {
+      method: 'POST',
+      body: JSON.stringify({ adminPassword }),
     }),
 
   getSession: (numericId: string): Promise<PokerSession> =>
     request(`/sessions/${numericId}`),
 
-  addPlayer: (numericId: string, name: string, initialBuyIn: number): Promise<PokerSession> =>
+  addPlayer: (numericId: string, name: string, initialBuyIn: number, adminPassword?: string | null): Promise<PokerSession> =>
     request(`/sessions/${numericId}/players`, {
       method: 'POST',
-      body: JSON.stringify({ name, initialBuyIn }),
+      body: JSON.stringify(withAdminPassword({ name, initialBuyIn }, adminPassword)),
     }),
 
-  rebuy: (numericId: string, playerId: string, amount: number): Promise<PokerSession> =>
+  rebuy: (numericId: string, playerId: string, amount: number, adminPassword?: string | null): Promise<PokerSession> =>
     request(`/sessions/${numericId}/rebuy`, {
       method: 'POST',
-      body: JSON.stringify({ playerId, amount }),
+      body: JSON.stringify(withAdminPassword({ playerId, amount }, adminPassword)),
     }),
 
   settle: (
     numericId: string, 
     cashOuts: Record<string, number>, 
-    balanceMode: BalanceMode
+    balanceMode: BalanceMode,
+    adminPassword?: string | null
   ): Promise<PokerSession> =>
     request(`/sessions/${numericId}/settle`, {
       method: 'POST',
-      body: JSON.stringify({ cashOuts, balanceMode }),
+      body: JSON.stringify(withAdminPassword({ cashOuts, balanceMode }, adminPassword)),
     }),
 
   calculateDiff: (numericId: string, cashOuts: Record<string, number>): Promise<{ diff: number }> =>
@@ -57,10 +74,10 @@ export const api = {
       body: JSON.stringify(cashOuts),
     }),
 
-  markDebtSettled: (numericId: string, debtId: string, settledAmount: number): Promise<PokerSession> =>
+  markDebtSettled: (numericId: string, debtId: string, settledAmount: number, adminPassword?: string | null): Promise<PokerSession> =>
     request(`/sessions/${numericId}/debts/settle`, {
       method: 'POST',
-      body: JSON.stringify({ debtId, settledAmount }),
+      body: JSON.stringify(withAdminPassword({ debtId, settledAmount }, adminPassword)),
     }),
 
   addTransfer: (
@@ -68,16 +85,18 @@ export const api = {
     fromPlayerId: string,
     toPlayerId: string,
     amount: number,
-    note?: string
+    note?: string,
+    adminPassword?: string | null
   ): Promise<PokerSession> =>
     request(`/sessions/${numericId}/transfers`, {
       method: 'POST',
-      body: JSON.stringify({ fromPlayerId, toPlayerId, amount, note }),
+      body: JSON.stringify(withAdminPassword({ fromPlayerId, toPlayerId, amount, note }, adminPassword)),
     }),
 
-  removeTransfer: (numericId: string, transferId: string): Promise<PokerSession> =>
+  removeTransfer: (numericId: string, transferId: string, adminPassword?: string | null): Promise<PokerSession> =>
     request(`/sessions/${numericId}/transfers/${transferId}`, {
       method: 'DELETE',
+      adminPassword,
     }),
 
   previewSettlement: (
@@ -90,8 +109,9 @@ export const api = {
       body: JSON.stringify({ cashOuts, balanceMode }),
     }),
 
-  reopenSession: (numericId: string): Promise<PokerSession> =>
+  reopenSession: (numericId: string, adminPassword?: string | null): Promise<PokerSession> =>
     request(`/sessions/${numericId}/reopen`, {
       method: 'POST',
+      body: JSON.stringify(withAdminPassword({}, adminPassword)),
     }),
 }

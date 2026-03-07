@@ -18,6 +18,8 @@ class SessionService {
         private const val MAX_RETRY_ATTEMPTS = 10
         private const val MIN_NUMERIC_ID = 100000
         private const val MAX_NUMERIC_ID = 999999
+        private const val ADMIN_PIN_MIN = 0
+        private const val ADMIN_PIN_MAX = 9999
     }
     
     /**
@@ -30,11 +32,37 @@ class SessionService {
     }
     
     /**
+     * 生成 4 位数管理员密码
+     */
+    private fun generateAdminPassword(): String {
+        return Random.nextInt(ADMIN_PIN_MIN, ADMIN_PIN_MAX + 1).toString()
+    }
+    
+    /**
+     * 验证管理员密码
+     */
+    fun requireAdmin(session: PokerSession, adminPassword: String?) {
+        if (!session.adminOnly) return
+        if (adminPassword == null || adminPassword != session.adminPassword) {
+            throw IllegalAccessException("Admin password required")
+        }
+    }
+    
+    /**
+     * 验证管理员密码（返回 boolean）
+     */
+    fun verifyAdmin(session: PokerSession, adminPassword: String?): Boolean {
+        if (!session.adminOnly) return true
+        return adminPassword != null && adminPassword == session.adminPassword
+    }
+    
+    /**
      * 创建新的扑克 Session
      * 处理 MongoDB 唯一索引冲突，自动重试生成新 ID
      */
-    suspend fun createSession(stakes: String): PokerSession {
+    suspend fun createSession(stakes: String, adminOnly: Boolean = false): Pair<PokerSession, String?> {
         var attempts = 0
+        val adminPassword = if (adminOnly) generateAdminPassword() else null
         
         while (attempts < MAX_RETRY_ATTEMPTS) {
             attempts++
@@ -42,13 +70,15 @@ class SessionService {
             
             val session = PokerSession(
                 numericId = numericId,
-                stakes = stakes
+                stakes = stakes,
+                adminOnly = adminOnly,
+                adminPassword = adminPassword
             )
             
             try {
                 MongoDB.sessions.insertOne(session)
                 logger.info("Created session with numericId: $numericId (attempt: $attempts)")
-                return session
+                return session to adminPassword
             } catch (e: Exception) {
                 if (MongoDB.isDuplicateKeyException(e)) {
                     logger.warn("Duplicate numericId collision: $numericId, retrying... (attempt: $attempts)")
@@ -75,6 +105,7 @@ class SessionService {
      */
     suspend fun addPlayer(numericId: String, request: AddPlayerRequest): PokerSession? {
         val session = getSession(numericId) ?: return null
+        requireAdmin(session, request.adminPassword)
         
         if (session.status != SessionStatus.ACTIVE) {
             throw IllegalStateException("Cannot add player to settled session")
@@ -110,6 +141,7 @@ class SessionService {
      */
     suspend fun rebuy(numericId: String, request: RebuyRequest): PokerSession? {
         val session = getSession(numericId) ?: return null
+        requireAdmin(session, request.adminPassword)
         
         if (session.status != SessionStatus.ACTIVE) {
             throw IllegalStateException("Cannot rebuy in settled session")
@@ -146,6 +178,7 @@ class SessionService {
      */
     suspend fun addTransfer(numericId: String, request: AddTransferRequest): PokerSession? {
         val session = getSession(numericId) ?: return null
+        requireAdmin(session, request.adminPassword)
         
         if (session.status != SessionStatus.ACTIVE) {
             throw IllegalStateException("Cannot add transfer to settled session")
@@ -184,8 +217,9 @@ class SessionService {
     /**
      * 删除定向转账记录
      */
-    suspend fun removeTransfer(numericId: String, transferId: String): PokerSession? {
+    suspend fun removeTransfer(numericId: String, transferId: String, adminPassword: String?): PokerSession? {
         val session = getSession(numericId) ?: return null
+        requireAdmin(session, adminPassword)
         
         if (session.status != SessionStatus.ACTIVE) {
             throw IllegalStateException("Cannot remove transfer from settled session")

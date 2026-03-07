@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { api } from '../api/client'
 import { useI18n } from '../i18n'
+import { canModify, getStoredAdminPassword } from '../store/adminStore'
 import type { PokerSession, BalanceMode } from '../types'
 import { formatCents, parseDollarsToCents } from '../utils/format'
 import ChipLoader from '../components/ChipLoader'
@@ -26,6 +27,10 @@ export default function SettlePage() {
       try {
         const data = await api.getSession(numericId)
         if (data.status === 'SETTLED') {
+          navigate(`/${numericId}`)
+          return
+        }
+        if (data.adminOnly && !canModify(numericId, true)) {
           navigate(`/${numericId}`)
           return
         }
@@ -76,6 +81,8 @@ export default function SettlePage() {
     }))
   }
 
+  const adminPassword = numericId ? getStoredAdminPassword(numericId) : null
+
   const handleSettle = async () => {
     if (!numericId || !session) return
     
@@ -88,7 +95,7 @@ export default function SettlePage() {
         cashOutsCents[player.id] = parseDollarsToCents(cashOuts[player.id] || '0')
       }
       
-      await api.settle(numericId, cashOutsCents, balanceMode)
+      await api.settle(numericId, cashOutsCents, balanceMode, adminPassword)
       navigate(`/${numericId}`)
     } catch (err) {
       setError(err instanceof Error ? err.message : t.settle.settleFailed)

@@ -11,6 +11,7 @@ export default function HomePage() {
   const { t } = useI18n()
   
   const [stakes, setStakes] = useState('1/2')
+  const [adminOnly, setAdminOnly] = useState(false)
   const [joinId, setJoinId] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -22,7 +23,11 @@ export default function HomePage() {
     setError('')
     
     try {
-      const response = await api.createSession(stakes)
+      const response = await api.createSession(stakes, adminOnly)
+      if (response.adminPassword) {
+        const { setStoredAdminPassword } = await import('../store/adminStore')
+        setStoredAdminPassword(response.numericId, response.adminPassword)
+      }
       navigate(`/${response.numericId}`)
     } catch (err) {
       setError(err instanceof Error ? err.message : t.home.createFailed)
@@ -66,6 +71,15 @@ export default function HomePage() {
                 className="input-field"
               />
             </div>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={adminOnly}
+                onChange={(e) => setAdminOnly(e.target.checked)}
+                className="rounded border-gray-600 bg-gray-700 text-poker-gold focus:ring-poker-gold"
+              />
+              <span className="text-sm text-gray-300">{t.admin.adminOnly}</span>
+            </label>
             <button
               onClick={handleCreate}
               disabled={loading || !stakes.trim()}

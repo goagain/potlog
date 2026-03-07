@@ -12,6 +12,9 @@ import RebuyModal from '../components/RebuyModal'
 import DebtCard from '../components/DebtCard'
 import TransferModal from '../components/TransferModal'
 import TransferCard from '../components/TransferCard'
+import BecomeAdminModal from '../components/BecomeAdminModal'
+import AdminPasswordInput from '../components/AdminPasswordInput'
+import { canModify, getStoredAdminPassword } from '../store/adminStore'
 
 export default function SessionPage() {
   const { numericId } = useParams<{ numericId: string }>()
@@ -26,6 +29,21 @@ export default function SessionPage() {
   const [showAddPlayer, setShowAddPlayer] = useState(false)
   const [rebuyPlayerId, setRebuyPlayerId] = useState<string | null>(null)
   const [showTransfer, setShowTransfer] = useState(false)
+  const [showBecomeAdmin, setShowBecomeAdmin] = useState(false)
+
+  const isAdmin = numericId ? canModify(numericId, session?.adminOnly) : false
+  const adminPassword = numericId ? getStoredAdminPassword(numericId) : null
+
+  const handleVerifyAdmin = async (password: string): Promise<boolean> => {
+    if (!numericId) return false
+    const res = await api.verifyAdmin(numericId, password)
+    if (res.valid) {
+      const { setAdmin } = await import('../store/adminStore')
+      setAdmin(numericId, password)
+      return true
+    }
+    return false
+  }
 
   useEffect(() => {
     if (!numericId) return
@@ -49,7 +67,7 @@ export default function SessionPage() {
     if (!numericId) return
     
     try {
-      const updated = await api.addPlayer(numericId, name, buyIn)
+      const updated = await api.addPlayer(numericId, name, buyIn, adminPassword)
       setSession(updated)
       setShowAddPlayer(false)
     } catch (err) {
@@ -61,7 +79,7 @@ export default function SessionPage() {
     if (!numericId || !rebuyPlayerId) return
     
     try {
-      const updated = await api.rebuy(numericId, rebuyPlayerId, amount)
+      const updated = await api.rebuy(numericId, rebuyPlayerId, amount, adminPassword)
       setSession(updated)
       setRebuyPlayerId(null)
     } catch (err) {
@@ -78,7 +96,7 @@ export default function SessionPage() {
     if (!numericId) return
     
     try {
-      const updated = await api.addTransfer(numericId, fromPlayerId, toPlayerId, amount, note)
+      const updated = await api.addTransfer(numericId, fromPlayerId, toPlayerId, amount, note, adminPassword)
       setSession(updated)
       setShowTransfer(false)
     } catch (err) {
@@ -90,7 +108,7 @@ export default function SessionPage() {
     if (!numericId) return
     
     try {
-      const updated = await api.removeTransfer(numericId, transferId)
+      const updated = await api.removeTransfer(numericId, transferId, adminPassword)
       setSession(updated)
     } catch (err) {
       setError(err instanceof Error ? err.message : t.session.removeTransferFailed)
@@ -105,7 +123,7 @@ export default function SessionPage() {
     }
     
     try {
-      const updated = await api.reopenSession(numericId)
+      const updated = await api.reopenSession(numericId, adminPassword)
       setSession(updated)
     } catch (err) {
       setError(err instanceof Error ? err.message : t.session.reopenFailed)
@@ -148,6 +166,12 @@ export default function SessionPage() {
           </button>
         </div>
 
+        {session.adminOnly && !isAdmin && (
+          <div className="mb-4 p-3 bg-amber-900/30 border border-amber-700/50 rounded-lg text-amber-200 text-sm text-center">
+            {t.admin.viewOnly}
+          </div>
+        )}
+
         {/* Session Info */}
         <div className="card mb-6">
           <div className="flex items-center justify-between mb-4">
@@ -156,12 +180,20 @@ export default function SessionPage() {
               <div className="text-gray-400">{t.session.blinds}: {session.stakes}</div>
             </div>
             <div className="flex items-center gap-2">
+              {session.adminOnly && !isAdmin && (
+                <button
+                  onClick={() => setShowBecomeAdmin(true)}
+                  className="text-sm bg-poker-gold/20 text-poker-gold px-3 py-1 rounded-lg hover:bg-poker-gold/30"
+                >
+                  {t.admin.becomeAdmin}
+                </button>
+              )}
               <div className={`px-3 py-1 rounded-full text-sm ${
                 isSettled ? 'bg-green-900/50 text-green-400' : 'bg-blue-900/50 text-blue-400'
               }`}>
                 {isSettled ? t.session.settled : t.session.active}
               </div>
-              {isSettled && (
+              {isSettled && isAdmin && (
                 <button
                   onClick={handleReopen}
                   className="text-sm bg-yellow-700/30 text-yellow-400 px-3 py-1 rounded-lg hover:bg-yellow-700/50"
@@ -176,6 +208,13 @@ export default function SessionPage() {
             <div className="text-sm text-gray-400 mb-1">Total Pot</div>
             <div className="text-3xl font-bold text-white">{formatCents(totalPot)}</div>
           </div>
+
+          {session.adminOnly && isAdmin && adminPassword && (
+            <div className="mt-4 pt-4 border-t border-gray-600">
+              <label className="block text-xs text-gray-500 mb-2">{t.admin.adminPassword}</label>
+              <AdminPasswordInput value={adminPassword} readOnly />
+            </div>
+          )}
         </div>
 
         {/* Players */}
@@ -184,7 +223,7 @@ export default function SessionPage() {
             <h2 className="text-xl font-semibold">
               {t.session.players} ({session.players.length})
             </h2>
-            {!isSettled && (
+            {!isSettled && isAdmin && (
               <button
                 onClick={() => setShowAddPlayer(true)}
                 className="bg-poker-gold/20 text-poker-gold px-4 py-2 rounded-lg hover:bg-poker-gold/30 transition-colors"
@@ -206,7 +245,7 @@ export default function SessionPage() {
                   player={player}
                   showNet={isSettled}
                   isSettled={isSettled}
-                  onRebuy={() => setRebuyPlayerId(player.id)}
+                  onRebuy={isAdmin ? () => setRebuyPlayerId(player.id) : undefined}
                 />
               ))}
             </div>
@@ -220,12 +259,14 @@ export default function SessionPage() {
               <h2 className="text-xl font-semibold">
                 {t.session.directTransfers} {session.transfers.length > 0 && `(${session.transfers.length})`}
               </h2>
+              {isAdmin && (
               <button
                 onClick={() => setShowTransfer(true)}
                 className="bg-blue-700/30 text-blue-400 px-4 py-2 rounded-lg hover:bg-blue-700/50 transition-colors"
               >
                 + {t.session.addTransfer}
               </button>
+              )}
             </div>
             
             {session.transfers.length === 0 ? (
@@ -239,7 +280,7 @@ export default function SessionPage() {
                     key={transfer.id}
                     transfer={transfer}
                     players={session.players}
-                    onRemove={() => handleRemoveTransfer(transfer.id)}
+                    onRemove={isAdmin ? () => handleRemoveTransfer(transfer.id) : undefined}
                   />
                 ))}
               </div>
@@ -274,11 +315,11 @@ export default function SessionPage() {
                   key={debt.id}
                   debt={debt}
                   players={session.players}
-                  onSettle={async (settledAmount) => {
+                  onSettle={isAdmin ? async (settledAmount) => {
                     if (!numericId) return
-                    const updated = await api.markDebtSettled(numericId, debt.id, settledAmount)
+                    const updated = await api.markDebtSettled(numericId, debt.id, settledAmount, adminPassword)
                     setSession(updated)
-                  }}
+                  } : undefined}
                 />
               ))}
             </div>
@@ -286,7 +327,7 @@ export default function SessionPage() {
         )}
 
         {/* Bottom Action Bar */}
-        {!isSettled && session.players.length >= 2 && (
+        {!isSettled && session.players.length >= 2 && isAdmin && (
           <div className="fixed bottom-0 left-0 right-0 p-4 bg-gray-900/95 border-t border-gray-700">
             <div className="max-w-lg mx-auto">
               <button
@@ -314,6 +355,14 @@ export default function SessionPage() {
           playerName={session.players.find(p => p.id === rebuyPlayerId)?.name || ''}
           onClose={() => setRebuyPlayerId(null)}
           onRebuy={handleRebuy}
+        />
+      )}
+
+      {/* 成为管理员模态框 */}
+      {showBecomeAdmin && (
+        <BecomeAdminModal
+          onClose={() => setShowBecomeAdmin(false)}
+          onVerify={handleVerifyAdmin}
         />
       )}
 

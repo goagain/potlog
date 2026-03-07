@@ -63,36 +63,45 @@ data class PokerSession(
     val numericId: String,
     var status: SessionStatus = SessionStatus.ACTIVE,
     val stakes: String,
+    val adminOnly: Boolean = false,
+    val adminPassword: String? = null,
     val players: MutableList<Player> = mutableListOf(),
     val logs: MutableList<TransactionLog> = mutableListOf(),
     val transfers: MutableList<DirectTransfer> = mutableListOf(),
     val debts: MutableList<Debt> = mutableListOf(),
     val createdAt: Long = System.currentTimeMillis(),
     var settledAt: Long? = null
-)
+) {
+    /** 返回不包含管理员密码的副本，用于 API 响应 */
+    fun withoutAdminPassword() = this.copy(adminPassword = null)
+}
 
 @Serializable
 data class CreateSessionRequest(
-    val stakes: String
+    val stakes: String,
+    val adminOnly: Boolean = false
 )
 
 @Serializable
 data class CreateSessionResponse(
     val numericId: String,
-    val session: PokerSession
+    val session: PokerSession,
+    val adminPassword: String? = null
 )
 
 @Serializable
 data class AddPlayerRequest(
     val name: String,
     val initialBuyIn: Long,
-    val userId: String? = null
+    val userId: String? = null,
+    val adminPassword: String? = null
 )
 
 @Serializable
 data class RebuyRequest(
     val playerId: String,
-    val amount: Long
+    val amount: Long,
+    val adminPassword: String? = null
 )
 
 @Serializable
@@ -104,7 +113,8 @@ data class CashOutRequest(
 @Serializable
 data class SettleRequest(
     val cashOuts: Map<String, Long>,
-    val balanceMode: BalanceMode = BalanceMode.MAX_WINNER
+    val balanceMode: BalanceMode = BalanceMode.MAX_WINNER,
+    val adminPassword: String? = null
 )
 
 enum class BalanceMode {
@@ -115,7 +125,8 @@ enum class BalanceMode {
 @Serializable
 data class ManualSettleRequest(
     val debtId: String,
-    val settledAmount: Long
+    val settledAmount: Long,
+    val adminPassword: String? = null
 )
 
 @Serializable
@@ -123,12 +134,34 @@ data class AddTransferRequest(
     val fromPlayerId: String,
     val toPlayerId: String,
     val amount: Long,
-    val note: String? = null
+    val note: String? = null,
+    val adminPassword: String? = null
 )
 
 @Serializable
 data class RemoveTransferRequest(
-    val transferId: String
+    val transferId: String,
+    val adminPassword: String? = null
+)
+
+@Serializable
+data class AdminAuthBody(
+    val adminPassword: String? = null
+)
+
+@Serializable
+data class ReopenRequest(
+    val adminPassword: String? = null
+)
+
+@Serializable
+data class VerifyAdminRequest(
+    val adminPassword: String
+)
+
+@Serializable
+data class VerifyAdminResponse(
+    val valid: Boolean
 )
 
 @Serializable

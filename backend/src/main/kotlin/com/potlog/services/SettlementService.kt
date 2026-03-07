@@ -20,6 +20,7 @@ class SettlementService(private val sessionService: SessionService) {
     suspend fun settle(numericId: String, request: SettleRequest): PokerSession {
         val session = sessionService.getSession(numericId)
             ?: throw IllegalArgumentException("Session not found: $numericId")
+        sessionService.requireAdmin(session, request.adminPassword)
         
         if (session.status != SessionStatus.ACTIVE) {
             throw IllegalStateException("Session already settled")
@@ -293,6 +294,7 @@ class SettlementService(private val sessionService: SessionService) {
     suspend fun markDebtSettled(numericId: String, request: ManualSettleRequest): PokerSession {
         val session = sessionService.getSession(numericId)
             ?: throw IllegalArgumentException("Session not found: $numericId")
+        sessionService.requireAdmin(session, request.adminPassword)
         
         val debt = session.debts.find { it.id == request.debtId }
             ?: throw IllegalArgumentException("Debt not found: ${request.debtId}")
@@ -333,9 +335,10 @@ class SettlementService(private val sessionService: SessionService) {
      * 重新打开已结算的 Session，进行重新结算
      * 保留所有定向转账记录（包括之前结算时标记的已结清转账）
      */
-    suspend fun reopenSession(numericId: String): PokerSession {
+    suspend fun reopenSession(numericId: String, adminPassword: String?): PokerSession {
         val session = sessionService.getSession(numericId)
             ?: throw IllegalArgumentException("Session not found: $numericId")
+        sessionService.requireAdmin(session, adminPassword)
         
         if (session.status != SessionStatus.SETTLED) {
             throw IllegalStateException("Session is not settled, cannot reopen")
