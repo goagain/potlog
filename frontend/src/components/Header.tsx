@@ -24,7 +24,8 @@ export default function Header() {
   }
 
   return (
-    <div className="fixed top-4 right-4 z-50 flex items-center gap-2">
+    <header className="sticky top-0 z-50 w-full px-4 py-3 flex justify-end">
+      <div className="flex items-center gap-2 flex-wrap justify-end">
       <a
         href={`https://github.com/${GITHUB_REPO}`}
         target="_blank"
@@ -59,6 +60,7 @@ export default function Header() {
         <span className="text-base">🌐</span>
         <span>{locale === 'en' ? '中文' : 'EN'}</span>
       </button>
-    </div>
+      </div>
+    </header>
   )
 }

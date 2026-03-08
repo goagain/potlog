@@ -154,13 +154,13 @@ export default function SessionPage() {
     <div className="min-h-screen p-4 pb-24">
       <div className="max-w-lg mx-auto">
         {/* Header */}
-        <div className="flex items-center justify-between mb-6">
-          <Link to="/" className="text-gray-400 hover:text-white">
+        <div className="flex items-center justify-between gap-3 mb-6 flex-shrink-0">
+          <Link to="/" className="text-gray-400 hover:text-white shrink-0">
             ← {t.common.back}
           </Link>
           <button
             onClick={handleCopyLink}
-            className="text-sm bg-gray-700 px-3 py-1 rounded-lg hover:bg-gray-600"
+            className="text-sm bg-gray-700 px-3 py-1 rounded-lg hover:bg-gray-600 shrink-0"
           >
             {t.common.copyLink}
           </button>
@@ -174,12 +174,12 @@ export default function SessionPage() {
 
         {/* Session Info */}
         <div className="card mb-6">
-          <div className="flex items-center justify-between mb-4">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
             <div>
               <div className="text-3xl font-mono text-poker-gold">{session.numericId}</div>
               <div className="text-gray-400">{t.session.blinds}: {session.stakes}</div>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               {session.adminOnly && !isAdmin && (
                 <button
                   onClick={() => setShowBecomeAdmin(true)}
