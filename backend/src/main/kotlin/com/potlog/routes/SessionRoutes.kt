@@ -61,6 +61,40 @@ fun Route.sessionRoutes(sessionService: SessionService, settlementService: Settl
             }
         }
         
+        post("/{numericId}/cash-out") {
+            val numericId = call.parameters["numericId"]
+                ?: return@post call.respond(HttpStatusCode.BadRequest, ErrorResponse("BAD_REQUEST", "Missing numericId"))
+            
+            val request = call.receive<CashOutRequest>()
+            
+            try {
+                val session = sessionService.cashOut(numericId, request)
+                    ?: return@post call.respond(HttpStatusCode.NotFound, ErrorResponse("NOT_FOUND", "Session not found"))
+                call.respond(session!!.withoutAdminPassword())
+            } catch (e: IllegalArgumentException) {
+                call.respond(HttpStatusCode.BadRequest, ErrorResponse("BAD_REQUEST", e.message ?: "Invalid request"))
+            } catch (e: IllegalStateException) {
+                call.respond(HttpStatusCode.Conflict, ErrorResponse("CONFLICT", e.message ?: "Cannot cash out in settled session"))
+            }
+        }
+
+        post("/{numericId}/cash-out/revoke") {
+            val numericId = call.parameters["numericId"]
+                ?: return@post call.respond(HttpStatusCode.BadRequest, ErrorResponse("BAD_REQUEST", "Missing numericId"))
+
+            val request = call.receive<RevokeCashOutRequest>()
+
+            try {
+                val session = sessionService.revokeCashOut(numericId, request.playerId)
+                    ?: return@post call.respond(HttpStatusCode.NotFound, ErrorResponse("NOT_FOUND", "Session not found"))
+                call.respond(session!!.withoutAdminPassword())
+            } catch (e: IllegalArgumentException) {
+                call.respond(HttpStatusCode.BadRequest, ErrorResponse("BAD_REQUEST", e.message ?: "Invalid request"))
+            } catch (e: IllegalStateException) {
+                call.respond(HttpStatusCode.Conflict, ErrorResponse("CONFLICT", e.message ?: "Cannot revoke in settled session"))
+            }
+        }
+
         post("/{numericId}/rebuy") {
             val numericId = call.parameters["numericId"]
                 ?: return@post call.respond(HttpStatusCode.BadRequest, ErrorResponse("BAD_REQUEST", "Missing numericId"))
@@ -152,15 +186,16 @@ fun Route.sessionRoutes(sessionService: SessionService, settlementService: Settl
             val request = call.receive<AddTransferRequest>()
             
             try {
-                val session = sessionService.addTransfer(numericId, request)
+                var session = sessionService.addTransfer(numericId, request)
                     ?: return@post call.respond(HttpStatusCode.NotFound, ErrorResponse("NOT_FOUND", "Session not found"))
-                call.respond(session!!.withoutAdminPassword())
+                if (session!!.status == SessionStatus.SETTLED) {
+                    session = settlementService.recalculateDebtsForSettledSession(numericId) ?: session
+                }
+                call.respond(session.withoutAdminPassword())
             } catch (e: IllegalAccessException) {
                 call.respond(HttpStatusCode.Forbidden, ErrorResponse("FORBIDDEN", e.message ?: "Admin password required"))
             } catch (e: IllegalArgumentException) {
                 call.respond(HttpStatusCode.BadRequest, ErrorResponse("BAD_REQUEST", e.message ?: "Invalid request"))
-            } catch (e: IllegalStateException) {
-                call.respond(HttpStatusCode.Conflict, ErrorResponse("CONFLICT", e.message ?: "Cannot modify settled session"))
             }
         }
         
@@ -174,15 +209,16 @@ fun Route.sessionRoutes(sessionService: SessionService, settlementService: Settl
                 ?: try { call.receiveOrNull<AdminAuthBody>()?.adminPassword } catch (_: Exception) { null }
             
             try {
-                val session = sessionService.removeTransfer(numericId, transferId, adminPassword)
+                var session = sessionService.removeTransfer(numericId, transferId, adminPassword)
                     ?: return@delete call.respond(HttpStatusCode.NotFound, ErrorResponse("NOT_FOUND", "Session not found"))
+                if (session!!.status == SessionStatus.SETTLED) {
+                    session = settlementService.recalculateDebtsForSettledSession(numericId) ?: session
+                }
                 call.respond(session.withoutAdminPassword())
             } catch (e: IllegalAccessException) {
                 call.respond(HttpStatusCode.Forbidden, ErrorResponse("FORBIDDEN", e.message ?: "Admin password required"))
             } catch (e: IllegalArgumentException) {
                 call.respond(HttpStatusCode.BadRequest, ErrorResponse("BAD_REQUEST", e.message ?: "Invalid request"))
-            } catch (e: IllegalStateException) {
-                call.respond(HttpStatusCode.Conflict, ErrorResponse("CONFLICT", e.message ?: "Cannot modify settled session"))
             }
         }
         

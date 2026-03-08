@@ -9,7 +9,7 @@ interface TransferCardProps {
   isSettled?: boolean
 }
 
-export default function TransferCard({ transfer, players, onRemove, isSettled }: TransferCardProps) {
+export default function TransferCard({ transfer, players, onRemove, isSettled: _isSettled }: TransferCardProps) {
   const { t } = useI18n()
   const fromPlayer = players.find(p => p.id === transfer.fromPlayerId)
   const toPlayer = players.find(p => p.id === transfer.toPlayerId)
@@ -36,7 +36,7 @@ export default function TransferCard({ transfer, players, onRemove, isSettled }:
             ({transfer.note})
           </span>
         )}
-        {!isSettled && onRemove && (
+        {onRemove && (
           <button
             onClick={onRemove}
             className="text-gray-500 hover:text-red-400 p-1"

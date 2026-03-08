@@ -364,6 +364,24 @@ class SettlementService(private val sessionService: SessionService) {
     }
     
     /**
+     * 结算后添加/删除转账时，根据当前 players 的 net 和 transfers 重新计算 debts
+     */
+    suspend fun recalculateDebtsForSettledSession(numericId: String): PokerSession? {
+        val session = sessionService.getSession(numericId) ?: return null
+        if (session.status != SessionStatus.SETTLED) return session
+        
+        val debts = generateMinimalDebtsWithTransfers(session.players, session.transfers)
+        
+        MongoDB.sessions.updateOne(
+            Filters.eq("numericId", numericId),
+            Updates.set("debts", debts)
+        )
+        
+        logger.info("Recalculated debts for settled session $numericId, debts count: ${debts.size}")
+        return sessionService.getSession(numericId)
+    }
+    
+    /**
      * 计算账目差额（用于前端实时显示）
      */
     fun calculateDiff(session: PokerSession, cashOuts: Map<String, Long>): Long {

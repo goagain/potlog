@@ -111,6 +111,11 @@ data class CashOutRequest(
 )
 
 @Serializable
+data class RevokeCashOutRequest(
+    val playerId: String
+)
+
+@Serializable
 data class SettleRequest(
     val cashOuts: Map<String, Long>,
     val balanceMode: BalanceMode = BalanceMode.MAX_WINNER,

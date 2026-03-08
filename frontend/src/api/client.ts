@@ -57,6 +57,18 @@ export const api = {
       body: JSON.stringify(withAdminPassword({ playerId, amount }, adminPassword)),
     }),
 
+  cashOut: (numericId: string, playerId: string, amount: number): Promise<PokerSession> =>
+    request(`/sessions/${numericId}/cash-out`, {
+      method: 'POST',
+      body: JSON.stringify({ playerId, amount }),
+    }),
+
+  revokeCashOut: (numericId: string, playerId: string): Promise<PokerSession> =>
+    request(`/sessions/${numericId}/cash-out/revoke`, {
+      method: 'POST',
+      body: JSON.stringify({ playerId }),
+    }),
+
   settle: (
     numericId: string, 
     cashOuts: Record<string, number>, 

@@ -179,16 +179,82 @@ class SessionService {
     }
     
     /**
+     * 提前离场：记录玩家筹码量（cash out）
+     * 结算时可沿用此值
+     */
+    suspend fun cashOut(numericId: String, request: CashOutRequest): PokerSession? {
+        val session = getSession(numericId) ?: return null
+        
+        if (session.status != SessionStatus.ACTIVE) {
+            throw IllegalStateException("Cannot cash out in settled session")
+        }
+        
+        val player = session.players.find { it.id == request.playerId }
+            ?: throw IllegalArgumentException("Player not found: ${request.playerId}")
+        
+        if (request.amount < 0) {
+            throw IllegalArgumentException("Cash out amount cannot be negative")
+        }
+        
+        val log = TransactionLog(
+            playerId = request.playerId,
+            type = TransactionType.CASH_OUT,
+            amount = request.amount
+        )
+        
+        MongoDB.sessions.updateOne(
+            Filters.and(
+                Filters.eq("numericId", numericId),
+                Filters.eq("players.id", request.playerId)
+            ),
+            Updates.combine(
+                Updates.set("players.$.cashOut", request.amount),
+                Updates.push("logs", log)
+            )
+        )
+        
+        logger.info("Early cash out: ${player.name} = ${request.amount}")
+        
+        return getSession(numericId)
+    }
+    
+    /**
+     * 撤销提前离场记录（如输入错误可清除后重新录入）
+     */
+    suspend fun revokeCashOut(numericId: String, playerId: String): PokerSession? {
+        val session = getSession(numericId) ?: return null
+        
+        if (session.status != SessionStatus.ACTIVE) {
+            throw IllegalStateException("Cannot revoke cash out in settled session")
+        }
+        
+        val player = session.players.find { it.id == playerId }
+            ?: throw IllegalArgumentException("Player not found: $playerId")
+        
+        if (player.cashOut == 0L) {
+            return session
+        }
+        
+        MongoDB.sessions.updateOne(
+            Filters.and(
+                Filters.eq("numericId", numericId),
+                Filters.eq("players.id", playerId)
+            ),
+            Updates.set("players.$.cashOut", 0L)
+        )
+        
+        logger.info("Revoked cash out: ${player.name}")
+        
+        return getSession(numericId)
+    }
+    
+    /**
      * 添加定向转账记录
      * 用于记录玩家之间的私下转账，结算时会自动扣除
      */
     suspend fun addTransfer(numericId: String, request: AddTransferRequest): PokerSession? {
         val session = getSession(numericId) ?: return null
         requireAdmin(session, request.adminPassword)
-        
-        if (session.status != SessionStatus.ACTIVE) {
-            throw IllegalStateException("Cannot add transfer to settled session")
-        }
         
         val fromPlayer = session.players.find { it.id == request.fromPlayerId }
             ?: throw IllegalArgumentException("From player not found: ${request.fromPlayerId}")
@@ -226,10 +292,6 @@ class SessionService {
     suspend fun removeTransfer(numericId: String, transferId: String, adminPassword: String?): PokerSession? {
         val session = getSession(numericId) ?: return null
         requireAdmin(session, adminPassword)
-        
-        if (session.status != SessionStatus.ACTIVE) {
-            throw IllegalStateException("Cannot remove transfer from settled session")
-        }
         
         val transfer = session.transfers.find { it.id == transferId }
             ?: throw IllegalArgumentException("Transfer not found: $transferId")

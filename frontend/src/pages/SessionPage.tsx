@@ -3,12 +3,18 @@ import { useParams, useNavigate, Link } from 'react-router-dom'
 import { api } from '../api/client'
 import { useHistoryStore } from '../store/historyStore'
 import { useI18n } from '../i18n'
-import type { PokerSession } from '../types'
+import type { PokerSession, TransactionLog } from '../types'
 import { formatCents } from '../utils/format'
+
+function formatLogTime(timestamp: number): string {
+  const d = new Date(timestamp)
+  return d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+}
 import ChipLoader from '../components/ChipLoader'
 import PlayerCard from '../components/PlayerCard'
 import AddPlayerModal from '../components/AddPlayerModal'
 import RebuyModal from '../components/RebuyModal'
+import CashOutModal from '../components/CashOutModal'
 import DebtCard from '../components/DebtCard'
 import TransferModal from '../components/TransferModal'
 import TransferCard from '../components/TransferCard'
@@ -28,8 +34,10 @@ export default function SessionPage() {
   
   const [showAddPlayer, setShowAddPlayer] = useState(false)
   const [rebuyPlayerId, setRebuyPlayerId] = useState<string | null>(null)
+  const [cashOutPlayerId, setCashOutPlayerId] = useState<string | null>(null)
   const [showTransfer, setShowTransfer] = useState(false)
   const [showBecomeAdmin, setShowBecomeAdmin] = useState(false)
+  const [buyInLogExpanded, setBuyInLogExpanded] = useState(false)
 
   const isAdmin = numericId ? canModify(numericId, session?.adminOnly) : false
   const adminPassword = numericId ? getStoredAdminPassword(numericId) : null
@@ -77,13 +85,37 @@ export default function SessionPage() {
 
   const handleRebuy = async (amount: number) => {
     if (!numericId || !rebuyPlayerId) return
-    
+
     try {
       const updated = await api.rebuy(numericId, rebuyPlayerId, amount, adminPassword)
       setSession(updated)
       setRebuyPlayerId(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : t.session.rebuyFailed)
+    }
+  }
+
+  const handleCashOut = async (amount: number) => {
+    if (!numericId || !cashOutPlayerId) return
+
+    try {
+      const updated = await api.cashOut(numericId, cashOutPlayerId, amount)
+      setSession(updated)
+      setCashOutPlayerId(null)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t.session.cashOutFailed)
+    }
+  }
+
+  const handleRevokeCashOut = async (playerId: string) => {
+    if (!numericId) return
+    if (!confirm(t.session.revokeCashOutConfirm)) return
+
+    try {
+      const updated = await api.revokeCashOut(numericId, playerId)
+      setSession(updated)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t.session.revokeCashOutFailed)
     }
   }
 
@@ -246,11 +278,60 @@ export default function SessionPage() {
                   showNet={isSettled}
                   isSettled={isSettled}
                   onRebuy={isAdmin ? () => setRebuyPlayerId(player.id) : undefined}
+                  onCashOut={isAdmin ? () => setCashOutPlayerId(player.id) : undefined}
+                  onRevokeCashOut={isAdmin && player.cashOut > 0 ? () => handleRevokeCashOut(player.id) : undefined}
                 />
               ))}
             </div>
           )}
         </div>
+
+        {/* 买入日志 - 可伸缩 */}
+        {session.players.length > 0 && (() => {
+          const buyInLogs = (session.logs || [])
+            .filter((log: TransactionLog) => log.type === 'BUY_IN' || log.type === 'REBUY')
+            .sort((a: TransactionLog, b: TransactionLog) => a.timestamp - b.timestamp)
+          return (
+            <div className="card mb-6">
+              <button
+                onClick={() => setBuyInLogExpanded(!buyInLogExpanded)}
+                className="flex items-center justify-between w-full text-left"
+              >
+                <h2 className="text-xl font-semibold">{t.session.buyInLog}</h2>
+                <span className="text-gray-400 text-2xl">
+                  {buyInLogExpanded ? '−' : '+'}
+                </span>
+              </button>
+              {buyInLogExpanded && (
+                <div className="mt-4 pt-4 border-t border-gray-600">
+                  {buyInLogs.length === 0 ? (
+                    <div className="text-center text-gray-500 py-4 text-sm">
+                      {t.session.buyInLogEmpty}
+                    </div>
+                  ) : (
+                    <div className="space-y-2 max-h-48 overflow-y-auto">
+                      {buyInLogs.map((log: TransactionLog) => {
+                        const player = session.players.find(p => p.id === log.playerId)
+                        return (
+                          <div
+                            key={log.id}
+                            className="flex items-center justify-between py-2 px-3 bg-gray-700/30 rounded-lg text-sm"
+                          >
+                            <span className="font-medium text-white">{player?.name || '?'}</span>
+                            <span className="text-gray-400">{formatLogTime(log.timestamp)}</span>
+                            <span className="text-poker-gold font-semibold">
+                              {log.type === 'REBUY' ? '+' : ''}{formatCents(log.amount)}
+                            </span>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )
+        })()}
 
         {/* Direct Transfers */}
         {!isSettled && session.players.length >= 2 && (
@@ -288,20 +369,39 @@ export default function SessionPage() {
           </div>
         )}
 
-        {/* Settled: Recorded Transfers */}
-        {isSettled && session.transfers.length > 0 && (
+        {/* Settled: Recorded Transfers - 结算后仍可添加/删除转账 */}
+        {isSettled && (
           <div className="card mb-6">
-            <h2 className="text-xl font-semibold mb-4">{t.session.recordedTransfers}</h2>
-            <div className="space-y-2">
-              {session.transfers.map((transfer) => (
-                <TransferCard
-                  key={transfer.id}
-                  transfer={transfer}
-                  players={session.players}
-                  isSettled={true}
-                />
-              ))}
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-semibold">
+                {t.session.recordedTransfers} {session.transfers.length > 0 && `(${session.transfers.length})`}
+              </h2>
+              {session.players.length >= 2 && isAdmin && (
+                <button
+                  onClick={() => setShowTransfer(true)}
+                  className="bg-blue-700/30 text-blue-400 px-4 py-2 rounded-lg hover:bg-blue-700/50 transition-colors"
+                >
+                  + {t.session.addTransfer}
+                </button>
+              )}
             </div>
+            {session.transfers.length === 0 ? (
+              <div className="text-center text-gray-500 py-4 text-sm">
+                {t.session.transferHint}
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {session.transfers.map((transfer) => (
+                  <TransferCard
+                    key={transfer.id}
+                    transfer={transfer}
+                    players={session.players}
+                    isSettled={true}
+                    onRemove={isAdmin ? () => handleRemoveTransfer(transfer.id) : undefined}
+                  />
+                ))}
+              </div>
+            )}
           </div>
         )}
 
@@ -355,6 +455,15 @@ export default function SessionPage() {
           playerName={session.players.find(p => p.id === rebuyPlayerId)?.name || ''}
           onClose={() => setRebuyPlayerId(null)}
           onRebuy={handleRebuy}
+        />
+      )}
+
+      {/* 提前离场模态框 */}
+      {cashOutPlayerId && (
+        <CashOutModal
+          playerName={session.players.find(p => p.id === cashOutPlayerId)?.name || ''}
+          onClose={() => setCashOutPlayerId(null)}
+          onCashOut={handleCashOut}
         />
       )}
 

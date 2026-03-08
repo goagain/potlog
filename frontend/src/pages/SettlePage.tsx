@@ -37,7 +37,8 @@ export default function SettlePage() {
         setSession(data)
         const initial: Record<string, string> = {}
         data.players.forEach(p => {
-          initial[p.id] = ''
+          // 提前离场的玩家预填筹码量
+          initial[p.id] = p.cashOut > 0 ? (p.cashOut / 100).toFixed(2) : ''
         })
         setCashOuts(initial)
       } catch (err) {
