@@ -10,6 +10,7 @@ version = "1.0.0"
 
 application {
     mainClass.set("com.potlog.ApplicationKt")
+    applicationDefaultJvmArgs = listOf("-Djava.net.preferIPv4Stack=true")
 }
 
 repositories {
@@ -55,6 +56,12 @@ kotlin {
 
 tasks.withType<Test> {
     useJUnitPlatform()
+}
+
+tasks.named<JavaExec>("run") {
+    jvmArgs("-Djava.net.preferIPv4Stack=true")
+    environment("HOST", "127.0.0.1")
+    environment("PORT", "8081")  // 与 vite proxy 一致
 }
 
 tasks.register("buildFatJar") {

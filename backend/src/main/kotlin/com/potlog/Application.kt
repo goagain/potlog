@@ -21,7 +21,8 @@ import org.slf4j.event.Level
 
 fun main() {
     val port = System.getenv("PORT")?.toIntOrNull() ?: 8080
-    embeddedServer(Netty, port = port, host = "0.0.0.0", module = Application::module)
+    val host = System.getenv("HOST") ?: "0.0.0.0"
+    embeddedServer(Netty, port = port, host = host, module = Application::module)
         .start(wait = true)
 }
 

@@ -293,7 +293,7 @@ class SessionService {
         val session = getSession(numericId) ?: return null
         requireAdmin(session, adminPassword)
         
-        val transfer = session.transfers.find { it.id == transferId }
+        session.transfers.firstOrNull { it.id == transferId }
             ?: throw IllegalArgumentException("Transfer not found: $transferId")
         
         MongoDB.sessions.updateOne(
