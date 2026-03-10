@@ -1,10 +1,10 @@
-FROM gradle:8.5-jdk17 AS builder
+FROM gradle:9.4-jdk21 AS builder
 
 WORKDIR /app
 COPY . .
 RUN gradle buildFatJar --no-daemon
 
-FROM eclipse-temurin:17-jre-alpine
+FROM eclipse-temurin:21-jre-jammy
 
 WORKDIR /app
 COPY --from=builder /app/build/libs/*-all.jar app.jar
