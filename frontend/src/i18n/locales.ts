@@ -141,6 +141,8 @@ export const locales = {
       complete: 'Complete Settlement',
       enterAllCashOuts: 'Please enter cash out amounts for all players',
       settleFailed: 'Settlement failed',
+      balanceDetails: 'Balance details',
+      bearsDiff: 'bears',
     },
   },
   zh: {
@@ -285,6 +287,8 @@ export const locales = {
       complete: '完成结算',
       enterAllCashOuts: '请输入所有玩家的带出金额',
       settleFailed: '结算失败',
+      balanceDetails: '平账承担明细',
+      bearsDiff: '承担',
     },
   },
 }

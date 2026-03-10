@@ -82,6 +82,54 @@ export default function SettlePage() {
     }
   }, [session, cashOuts])
 
+  const balanceDetails = useMemo((): { playerId: string; playerName: string; adjustment: number }[] => {
+    if (!session || !allFilled || diff === 0) return []
+    const playersWithNet = session.players.map(p => ({
+      ...p,
+      net: parseDollarsToCents(cashOuts[p.id] || '0') - p.buyIn,
+    }))
+    if (balanceMode === 'MAX_WINNER') {
+      const maxWinner = playersWithNet.reduce((a, b) => (a.net >= b.net ? a : b))
+      return [{ playerId: maxWinner.id, playerName: maxWinner.name, adjustment: diff }]
+    }
+    if (balanceMode === 'DEALER' && dealerPlayerId) {
+      const dealer = session.players.find(p => p.id === dealerPlayerId)
+      if (dealer) return [{ playerId: dealer.id, playerName: dealer.name, adjustment: diff }]
+      return []
+    }
+    if (balanceMode === 'PROPORTIONAL') {
+      const winners = playersWithNet.filter(p => p.net > 0)
+      if (winners.length === 0) {
+        const maxWinner = playersWithNet.reduce((a, b) => (a.net >= b.net ? a : b))
+        return [{ playerId: maxWinner.id, playerName: maxWinner.name, adjustment: diff }]
+      }
+      const totalWinnings = winners.reduce((s, p) => s + p.net, 0)
+      const quotaResults = winners.map(p => {
+        const proportion = p.net / totalWinnings
+        const quota = proportion * diff
+        const integerPart = diff >= 0 ? Math.floor(quota) : Math.ceil(quota)
+        return { playerId: p.id, playerName: p.name, integerPart, remainder: quota - integerPart }
+      })
+      let remaining = diff - quotaResults.reduce((s, r) => s + r.integerPart, 0)
+      const sorted = diff >= 0
+        ? [...quotaResults].sort((a, b) => b.remainder - a.remainder)
+        : [...quotaResults].sort((a, b) => a.remainder - b.remainder)
+      const step = diff >= 0 ? 1 : -1
+      const adjustments = Object.fromEntries(quotaResults.map(r => [r.playerId, r.integerPart]))
+      for (const r of sorted) {
+        if (remaining === 0) break
+        adjustments[r.playerId] += step
+        remaining -= step
+      }
+      return quotaResults.map(r => ({
+        playerId: r.playerId,
+        playerName: r.playerName,
+        adjustment: adjustments[r.playerId],
+      })).filter(x => x.adjustment !== 0)
+    }
+    return []
+  }, [session, cashOuts, allFilled, diff, balanceMode, dealerPlayerId])
+
   const handleCashOutChange = (playerId: string, value: string) => {
     setCashOuts(prev => ({
       ...prev,
@@ -222,6 +270,21 @@ export default function SettlePage() {
                         {t.settle.dealer}
                       </button>
                     </div>
+                    {balanceDetails.length > 0 && (
+                      <div className="mt-3 pt-3 border-t border-yellow-700/30">
+                        <div className="text-gray-400 text-sm mb-2">{t.settle.balanceDetails}</div>
+                        <div className="space-y-1.5">
+                          {balanceDetails.map(({ playerId, playerName, adjustment }) => (
+                            <div key={playerId} className="flex justify-between text-sm">
+                              <span className="text-white">{playerName}</span>
+                              <span className="text-poker-gold font-medium">
+                                {t.settle.bearsDiff} {adjustment >= 0 ? '+' : ''}{formatCents(adjustment)}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </>
                 )}
                 <div className="text-gray-400 text-sm">{t.settle.transferMode}</div>

@@ -241,6 +241,7 @@ class SettlementService(private val sessionService: SessionService) {
         val debts = mutableListOf<Debt>()
         for ((playerId, balance) in adjustedBalances) {
             if (balance == 0L) continue
+            if (playerId == dealerPlayerId) continue  // 庄家不生成自己给自己的转账
             if (balance < 0) {
                 debts.add(Debt(
                     id = ObjectId().toHexString(),
