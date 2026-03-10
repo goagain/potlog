@@ -6,9 +6,15 @@ import { useI18n } from '../i18n'
 import type { PokerSession, TransactionLog } from '../types'
 import { formatCents } from '../utils/format'
 
-function formatLogTime(timestamp: number): string {
+function formatLogTime(timestamp: number, locale: string): string {
   const d = new Date(timestamp)
-  return d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+  const loc = locale === 'zh' ? 'zh-CN' : 'en-US'
+  const dateOpts = locale === 'zh'
+    ? { year: 'numeric' as const, month: 'numeric' as const, day: 'numeric' as const }
+    : { year: 'numeric' as const, month: 'short' as const, day: 'numeric' as const }
+  const date = d.toLocaleDateString(loc, dateOpts)
+  const time = d.toLocaleTimeString(loc, { hour: '2-digit', minute: '2-digit' })
+  return `${date} ${time}`
 }
 import ChipLoader from '../components/ChipLoader'
 import PlayerCard from '../components/PlayerCard'
@@ -26,7 +32,7 @@ export default function SessionPage() {
   const { numericId } = useParams<{ numericId: string }>()
   const navigate = useNavigate()
   const { addToHistory } = useHistoryStore()
-  const { t } = useI18n()
+  const { t, locale } = useI18n()
   
   const [session, setSession] = useState<PokerSession | null>(null)
   const [loading, setLoading] = useState(true)
@@ -288,9 +294,28 @@ export default function SessionPage() {
 
         {/* 买入日志 - 可伸缩 */}
         {session.players.length > 0 && (() => {
-          const buyInLogs = (session.logs || [])
-            .filter((log: TransactionLog) => log.type === 'BUY_IN' || log.type === 'REBUY')
+          const ledgerLogs = (session.logs || [])
+            .filter((log: TransactionLog) =>
+              ['BUY_IN', 'REBUY', 'CASH_OUT', 'MANUAL_TRANSFER'].includes(log.type)
+            )
             .sort((a: TransactionLog, b: TransactionLog) => a.timestamp - b.timestamp)
+          const labelFor = (type: string) => {
+            switch (type) {
+              case 'BUY_IN': return t.session.logBuyIn
+              case 'REBUY': return t.session.logRebuy
+              case 'CASH_OUT': return t.session.logCashOut
+              case 'MANUAL_TRANSFER': return t.session.logTransfer
+              default: return type
+            }
+          }
+          const descFor = (log: TransactionLog) => {
+            const from = session.players.find(p => p.id === log.playerId)?.name || '?'
+            if (log.type === 'MANUAL_TRANSFER' && log.toPlayerId) {
+              const to = session.players.find(p => p.id === log.toPlayerId)?.name || '?'
+              return `${from} → ${to}`
+            }
+            return from
+          }
           return (
             <div className="card mb-6">
               <button
@@ -304,27 +329,28 @@ export default function SessionPage() {
               </button>
               {buyInLogExpanded && (
                 <div className="mt-4 pt-4 border-t border-gray-600">
-                  {buyInLogs.length === 0 ? (
+                  {ledgerLogs.length === 0 ? (
                     <div className="text-center text-gray-500 py-4 text-sm">
                       {t.session.buyInLogEmpty}
                     </div>
                   ) : (
-                    <div className="space-y-2 max-h-48 overflow-y-auto">
-                      {buyInLogs.map((log: TransactionLog) => {
-                        const player = session.players.find(p => p.id === log.playerId)
-                        return (
-                          <div
-                            key={log.id}
-                            className="flex items-center justify-between py-2 px-3 bg-gray-700/30 rounded-lg text-sm"
-                          >
-                            <span className="font-medium text-white">{player?.name || '?'}</span>
-                            <span className="text-gray-400">{formatLogTime(log.timestamp)}</span>
-                            <span className="text-poker-gold font-semibold">
-                              {log.type === 'REBUY' ? '+' : ''}{formatCents(log.amount)}
-                            </span>
+                    <div className="space-y-2 max-h-64 overflow-y-auto">
+                      {ledgerLogs.map((log: TransactionLog) => (
+                        <div
+                          key={log.id}
+                          className="flex items-center justify-between py-2 px-3 bg-gray-700/30 rounded-lg text-sm"
+                        >
+                          <div className="flex flex-col gap-0.5">
+                            <span className="font-medium text-white">{descFor(log)}</span>
+                            <span className="text-gray-500 text-xs">{labelFor(log.type)} · {formatLogTime(log.timestamp, locale)}</span>
                           </div>
-                        )
-                      })}
+                          <span className={`font-semibold ${
+                            log.type === 'CASH_OUT' ? 'text-blue-400' : 'text-poker-gold'
+                          }`}>
+                            {log.type === 'REBUY' || log.type === 'BUY_IN' ? '+' : ''}{formatCents(log.amount)}
+                          </span>
+                        </div>
+                      ))}
                     </div>
                   )}
                 </div>

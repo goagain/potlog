@@ -3,7 +3,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom'
 import { api } from '../api/client'
 import { useI18n } from '../i18n'
 import { canModify, getStoredAdminPassword } from '../store/adminStore'
-import type { PokerSession, BalanceMode } from '../types'
+import type { PokerSession, BalanceMode, TransferMode } from '../types'
 import { formatCents, parseDollarsToCents } from '../utils/format'
 import ChipLoader from '../components/ChipLoader'
 
@@ -19,6 +19,8 @@ export default function SettlePage() {
   
   const [cashOuts, setCashOuts] = useState<Record<string, string>>({})
   const [balanceMode, setBalanceMode] = useState<BalanceMode>('MAX_WINNER')
+  const [transferMode, setTransferMode] = useState<TransferMode>('MINIMAL')
+  const [dealerPlayerId, setDealerPlayerId] = useState<string | null>(null)
 
   useEffect(() => {
     if (!numericId) return
@@ -35,6 +37,7 @@ export default function SettlePage() {
           return
         }
         setSession(data)
+        setDealerPlayerId(data.players[0]?.id ?? null)
         const initial: Record<string, string> = {}
         data.players.forEach(p => {
           // 提前离场的玩家预填筹码量
@@ -50,6 +53,10 @@ export default function SettlePage() {
     
     fetchSession()
   }, [numericId, navigate])
+
+  useEffect(() => {
+    if (balanceMode === 'DEALER') setTransferMode('CENTRAL')
+  }, [balanceMode])
 
   const { totalBuyIn, totalCashOut, diff, allFilled } = useMemo(() => {
     if (!session) return { totalBuyIn: 0, totalCashOut: 0, diff: 0, allFilled: false }
@@ -96,7 +103,15 @@ export default function SettlePage() {
         cashOutsCents[player.id] = parseDollarsToCents(cashOuts[player.id] || '0')
       }
       
-      await api.settle(numericId, cashOutsCents, balanceMode, adminPassword)
+      const needsDealer = transferMode === 'CENTRAL' || balanceMode === 'DEALER'
+      await api.settle(
+        numericId,
+        cashOutsCents,
+        balanceMode,
+        transferMode,
+        needsDealer ? dealerPlayerId : null,
+        adminPassword
+      )
       navigate(`/${numericId}`)
     } catch (err) {
       setError(err instanceof Error ? err.message : t.settle.settleFailed)
@@ -124,7 +139,9 @@ export default function SettlePage() {
 
   if (!session) return null
 
-  const canSettle = allFilled && (diff === 0 || diff !== 0)
+  const needsDealer = transferMode === 'CENTRAL' || balanceMode === 'DEALER'
+  const canSettle = allFilled && (diff === 0 || diff !== 0) &&
+    (!needsDealer || dealerPlayerId != null)
 
   return (
     <div className="min-h-screen p-4 pb-32">
@@ -158,32 +175,95 @@ export default function SettlePage() {
             </div>
           </div>
           
-          {diff !== 0 && allFilled && (
-            <div className="mt-4 p-3 bg-yellow-900/30 border border-yellow-700/50 rounded-lg">
-              <div className="text-yellow-400 text-sm mb-2">
-                {t.settle.diffWarning.replace('{amount}', formatCents(Math.abs(diff)))}
-              </div>
-              <div className="flex gap-3">
-                <button
-                  onClick={() => setBalanceMode('MAX_WINNER')}
-                  className={`flex-1 py-2 px-3 rounded-lg text-sm transition-colors ${
-                    balanceMode === 'MAX_WINNER'
-                      ? 'bg-poker-gold text-black'
-                      : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                  }`}
-                >
-                  {t.settle.maxWinner}
-                </button>
-                <button
-                  onClick={() => setBalanceMode('PROPORTIONAL')}
-                  className={`flex-1 py-2 px-3 rounded-lg text-sm transition-colors ${
-                    balanceMode === 'PROPORTIONAL'
-                      ? 'bg-poker-gold text-black'
-                      : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                  }`}
-                >
-                  {t.settle.proportional}
-                </button>
+          {allFilled && (
+            <div className={`mt-4 p-3 rounded-lg ${
+              diff !== 0
+                ? 'bg-yellow-900/30 border border-yellow-700/50'
+                : 'bg-gray-800/50'
+            }`}>
+              {diff !== 0 && (
+                <div className="text-yellow-400 text-sm mb-2">
+                  {t.settle.diffWarning.replace('{amount}', formatCents(Math.abs(diff)))}
+                </div>
+              )}
+              <div className="flex flex-col gap-3">
+                {diff !== 0 && (
+                  <>
+                    <div className="text-gray-400 text-sm">{t.settle.balanceMode}</div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => setBalanceMode('MAX_WINNER')}
+                        className={`flex-1 py-2 px-3 rounded-lg text-sm transition-colors ${
+                          balanceMode === 'MAX_WINNER'
+                            ? 'bg-poker-gold text-black'
+                            : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                        }`}
+                      >
+                        {t.settle.maxWinner}
+                      </button>
+                      <button
+                        onClick={() => setBalanceMode('PROPORTIONAL')}
+                        className={`flex-1 py-2 px-3 rounded-lg text-sm transition-colors ${
+                          balanceMode === 'PROPORTIONAL'
+                            ? 'bg-poker-gold text-black'
+                            : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                        }`}
+                      >
+                        {t.settle.proportional}
+                      </button>
+                      <button
+                        onClick={() => setBalanceMode('DEALER')}
+                        className={`flex-1 py-2 px-3 rounded-lg text-sm transition-colors ${
+                          balanceMode === 'DEALER'
+                            ? 'bg-poker-gold text-black'
+                            : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                        }`}
+                      >
+                        {t.settle.dealer}
+                      </button>
+                    </div>
+                  </>
+                )}
+                <div className="text-gray-400 text-sm">{t.settle.transferMode}</div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setTransferMode('MINIMAL')}
+                    disabled={balanceMode === 'DEALER'}
+                    className={`flex-1 py-2 px-3 rounded-lg text-sm transition-colors ${
+                      balanceMode === 'DEALER'
+                        ? 'bg-gray-800 text-gray-500 cursor-not-allowed'
+                        : transferMode === 'MINIMAL'
+                          ? 'bg-poker-gold text-black'
+                          : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                    }`}
+                  >
+                    {t.settle.transferMinimal}
+                  </button>
+                  <button
+                    onClick={() => setTransferMode('CENTRAL')}
+                    className={`flex-1 py-2 px-3 rounded-lg text-sm transition-colors ${
+                      transferMode === 'CENTRAL'
+                        ? 'bg-poker-gold text-black'
+                        : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                    }`}
+                  >
+                    {t.settle.transferCentral}
+                  </button>
+                </div>
+                {needsDealer && (
+                  <div>
+                    <div className="text-gray-400 text-sm mb-2">{t.settle.selectDealer}</div>
+                    <select
+                      value={dealerPlayerId ?? ''}
+                      onChange={(e) => setDealerPlayerId(e.target.value || null)}
+                      className="w-full px-3 py-2 rounded-lg bg-gray-700 text-white border border-gray-600 focus:border-poker-gold focus:outline-none"
+                    >
+                      {session.players.map((p) => (
+                        <option key={p.id} value={p.id}>{p.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
               </div>
             </div>
           )}

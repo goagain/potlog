@@ -93,9 +93,10 @@ class ModelsTest {
     
     @Test
     fun `test BalanceMode enum values`() {
-        assertEquals(2, BalanceMode.values().size)
+        assertEquals(3, BalanceMode.values().size)
         assertTrue(BalanceMode.values().contains(BalanceMode.MAX_WINNER))
         assertTrue(BalanceMode.values().contains(BalanceMode.PROPORTIONAL))
+        assertTrue(BalanceMode.values().contains(BalanceMode.DEALER))
     }
     
     @Test

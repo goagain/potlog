@@ -232,7 +232,10 @@ fun Route.sessionRoutes(sessionService: SessionService, settlementService: Settl
                 ?: return@post call.respond(HttpStatusCode.NotFound, ErrorResponse("NOT_FOUND", "Session not found"))
             
             try {
-                val previewDebts = settlementService.previewSettlement(session, request.cashOuts, request.balanceMode)
+                val previewDebts = settlementService.previewSettlement(
+                    session, request.cashOuts, request.balanceMode,
+                    request.transferMode, request.dealerPlayerId
+                )
                 call.respond(mapOf(
                     "debts" to previewDebts,
                     "transfers" to session.transfers

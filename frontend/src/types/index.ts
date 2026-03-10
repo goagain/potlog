@@ -14,6 +14,8 @@ export interface TransactionLog {
   amount: number
   timestamp: number
   note?: string
+  /** 转账时使用：收款人 playerId */
+  toPlayerId?: string
 }
 
 export interface Debt {
@@ -45,6 +47,10 @@ export interface PokerSession {
   debts: Debt[]
   createdAt: number
   settledAt?: number
+  /** 结算时使用的转账模式，结算后添加/删除转账时重算沿用 */
+  settlementTransferMode?: 'MINIMAL' | 'CENTRAL'
+  /** 庄家转账模式下的庄家玩家 ID */
+  settlementDealerPlayerId?: string | null
 }
 
 export interface CreateSessionResponse {
@@ -59,4 +65,5 @@ export interface HistoryItem {
   timestamp: number
 }
 
-export type BalanceMode = 'MAX_WINNER' | 'PROPORTIONAL'
+export type BalanceMode = 'MAX_WINNER' | 'PROPORTIONAL' | 'DEALER'
+export type TransferMode = 'MINIMAL' | 'CENTRAL'

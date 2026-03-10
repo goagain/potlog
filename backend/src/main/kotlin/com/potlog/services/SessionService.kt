@@ -276,9 +276,21 @@ class SessionService {
             note = request.note
         )
         
+        val log = TransactionLog(
+            playerId = request.fromPlayerId,
+            type = TransactionType.MANUAL_TRANSFER,
+            amount = request.amount,
+            note = request.note,
+            toPlayerId = request.toPlayerId,
+            transferId = transfer.id
+        )
+        
         MongoDB.sessions.updateOne(
             Filters.eq("numericId", numericId),
-            Updates.push("transfers", transfer)
+            Updates.combine(
+                Updates.push("transfers", transfer),
+                Updates.push("logs", log)
+            )
         )
         
         logger.info("Added transfer: ${fromPlayer.name} -> ${toPlayer.name} = ${request.amount}")
@@ -298,7 +310,10 @@ class SessionService {
         
         MongoDB.sessions.updateOne(
             Filters.eq("numericId", numericId),
-            Updates.pull("transfers", Filters.eq("id", transferId))
+            Updates.combine(
+                Updates.pull("transfers", Filters.eq("id", transferId)),
+                Updates.pull("logs", Filters.eq("transferId", transferId))
+            )
         )
         
         logger.info("Removed transfer: $transferId")

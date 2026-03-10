@@ -42,12 +42,25 @@ class SettlementService(private val sessionService: SessionService) {
             when (request.balanceMode) {
                 BalanceMode.MAX_WINNER -> balanceWithMaxWinner(updatedPlayers, diff)
                 BalanceMode.PROPORTIONAL -> balanceProportionally(updatedPlayers, diff)
+                BalanceMode.DEALER -> {
+                    val dealerId = request.dealerPlayerId
+                        ?: throw IllegalArgumentException("dealerPlayerId required for DEALER balance mode")
+                    balanceWithDealer(updatedPlayers, diff, dealerId)
+                }
             }
         } else {
             updatedPlayers.map { it.copy(net = it.cashOut - it.buyIn) }.toMutableList()
         }
         
-        val debts = generateMinimalDebtsWithTransfers(balancedPlayers, session.transfers)
+        val transferMode = request.transferMode ?: TransferMode.MINIMAL
+        val debts = when (transferMode) {
+            TransferMode.MINIMAL -> generateMinimalDebtsWithTransfers(balancedPlayers, session.transfers)
+            TransferMode.CENTRAL -> {
+                val dealerId = request.dealerPlayerId
+                    ?: throw IllegalArgumentException("dealerPlayerId required for CENTRAL transfer mode")
+                generateCentralDebts(dealerId, balancedPlayers, session.transfers)
+            }
+        }
         
         MongoDB.sessions.updateOne(
             Filters.eq("numericId", numericId),
@@ -55,7 +68,9 @@ class SettlementService(private val sessionService: SessionService) {
                 Updates.set("status", SessionStatus.SETTLED.name),
                 Updates.set("players", balancedPlayers),
                 Updates.set("debts", debts),
-                Updates.set("settledAt", System.currentTimeMillis())
+                Updates.set("settledAt", System.currentTimeMillis()),
+                Updates.set("settlementTransferMode", transferMode.name),
+                Updates.set("settlementDealerPlayerId", request.dealerPlayerId)
             )
         )
         
@@ -74,6 +89,27 @@ class SettlementService(private val sessionService: SessionService) {
         
         return playersWithNet.map { player ->
             if (player.id == maxWinner.id) {
+                player.copy(net = player.net + diff)
+            } else {
+                player
+            }
+        }.toMutableList()
+    }
+    
+    /**
+     * 平账：差额由庄家承担
+     * 庄家 net += diff
+     */
+    private fun balanceWithDealer(
+        players: MutableList<Player>,
+        diff: Long,
+        dealerPlayerId: String
+    ): MutableList<Player> {
+        val playersWithNet = players.map { it.copy(net = it.cashOut - it.buyIn) }.toMutableList()
+        val dealer = playersWithNet.find { it.id == dealerPlayerId }
+            ?: throw IllegalArgumentException("Dealer not found: $dealerPlayerId")
+        return playersWithNet.map { player ->
+            if (player.id == dealerPlayerId) {
                 player.copy(net = player.net + diff)
             } else {
                 player
@@ -163,6 +199,65 @@ class SettlementService(private val sessionService: SessionService) {
         }
         
         return adjustments
+    }
+    
+    /**
+     * 中心结账模式：所有输家→庄家，庄家→所有赢家
+     */
+    private fun generateCentralDebts(
+        dealerPlayerId: String,
+        players: List<Player>,
+        transfers: List<DirectTransfer>
+    ): MutableList<Debt> {
+        val netBalances = mutableMapOf<String, Long>()
+        players.forEach { netBalances[it.id] = it.net }
+        
+        val transferMatrix = mutableMapOf<Pair<String, String>, Long>()
+        for (transfer in transfers) {
+            val key = transfer.fromPlayerId to transfer.toPlayerId
+            val reverseKey = transfer.toPlayerId to transfer.fromPlayerId
+            if (transferMatrix.containsKey(reverseKey)) {
+                val existing = transferMatrix[reverseKey]!!
+                if (transfer.amount >= existing) {
+                    transferMatrix.remove(reverseKey)
+                    if (transfer.amount > existing) {
+                        transferMatrix[key] = transfer.amount - existing
+                    }
+                } else {
+                    transferMatrix[reverseKey] = existing - transfer.amount
+                }
+            } else {
+                transferMatrix[key] = (transferMatrix[key] ?: 0L) + transfer.amount
+            }
+        }
+        
+        val adjustedBalances = netBalances.toMutableMap()
+        for ((pair, amount) in transferMatrix) {
+            val (from, to) = pair
+            adjustedBalances[from] = (adjustedBalances[from] ?: 0L) + amount
+            adjustedBalances[to] = (adjustedBalances[to] ?: 0L) - amount
+        }
+        
+        val debts = mutableListOf<Debt>()
+        for ((playerId, balance) in adjustedBalances) {
+            if (balance == 0L) continue
+            if (balance < 0) {
+                debts.add(Debt(
+                    id = ObjectId().toHexString(),
+                    fromPlayerId = playerId,
+                    toPlayerId = dealerPlayerId,
+                    amount = abs(balance)
+                ))
+            } else {
+                debts.add(Debt(
+                    id = ObjectId().toHexString(),
+                    fromPlayerId = dealerPlayerId,
+                    toPlayerId = playerId,
+                    amount = balance
+                ))
+            }
+        }
+        return debts
     }
     
     /**
@@ -264,7 +359,9 @@ class SettlementService(private val sessionService: SessionService) {
     fun previewSettlement(
         session: PokerSession,
         cashOuts: Map<String, Long>,
-        balanceMode: BalanceMode
+        balanceMode: BalanceMode,
+        transferMode: TransferMode,
+        dealerPlayerId: String? = null
     ): List<Debt> {
         val updatedPlayers = session.players.map { player ->
             val cashOut = cashOuts[player.id] ?: 0L
@@ -279,12 +376,24 @@ class SettlementService(private val sessionService: SessionService) {
             when (balanceMode) {
                 BalanceMode.MAX_WINNER -> balanceWithMaxWinner(updatedPlayers, diff)
                 BalanceMode.PROPORTIONAL -> balanceProportionally(updatedPlayers, diff)
+                BalanceMode.DEALER -> {
+                    val dealer = dealerPlayerId ?: session.players.firstOrNull()?.id
+                        ?: throw IllegalArgumentException("dealerPlayerId required for DEALER balance mode")
+                    balanceWithDealer(updatedPlayers, diff, dealer)
+                }
             }
         } else {
             updatedPlayers.map { it.copy(net = it.cashOut - it.buyIn) }.toMutableList()
         }
         
-        return generateMinimalDebtsWithTransfers(balancedPlayers, session.transfers)
+        return when (transferMode) {
+            TransferMode.MINIMAL -> generateMinimalDebtsWithTransfers(balancedPlayers, session.transfers)
+            TransferMode.CENTRAL -> generateCentralDebts(
+                dealerPlayerId ?: session.players.first().id,
+                balancedPlayers,
+                session.transfers
+            )
+        }
     }
     
     /**
@@ -314,6 +423,15 @@ class SettlementService(private val sessionService: SessionService) {
             note = "结算转账"
         )
         
+        val log = TransactionLog(
+            playerId = debt.fromPlayerId,
+            type = TransactionType.MANUAL_TRANSFER,
+            amount = actualSettleAmount,
+            note = "结算转账",
+            toPlayerId = debt.toPlayerId,
+            transferId = transfer.id
+        )
+        
         MongoDB.sessions.updateOne(
             Filters.and(
                 Filters.eq("numericId", numericId),
@@ -322,7 +440,8 @@ class SettlementService(private val sessionService: SessionService) {
             Updates.combine(
                 Updates.set("debts.$.settledAmount", newSettledAmount),
                 Updates.set("debts.$.settled", isFullySettled),
-                Updates.push("transfers", transfer)
+                Updates.push("transfers", transfer),
+                Updates.push("logs", log)
             )
         )
         
@@ -345,7 +464,7 @@ class SettlementService(private val sessionService: SessionService) {
         }
         
         val resetPlayers = session.players.map { player ->
-            player.copy(cashOut = 0, net = 0)
+            player.copy(net = 0)
         }
         
         MongoDB.sessions.updateOne(
@@ -365,12 +484,25 @@ class SettlementService(private val sessionService: SessionService) {
     
     /**
      * 结算后添加/删除转账时，根据当前 players 的 net 和 transfers 重新计算 debts
+     * 沿用结算时的转账模式（庄家转账则继续用庄家转账）
      */
     suspend fun recalculateDebtsForSettledSession(numericId: String): PokerSession? {
         val session = sessionService.getSession(numericId) ?: return null
         if (session.status != SessionStatus.SETTLED) return session
         
-        val debts = generateMinimalDebtsWithTransfers(session.players, session.transfers)
+        val transferMode = when (session.settlementTransferMode) {
+            "CENTRAL" -> TransferMode.CENTRAL
+            else -> TransferMode.MINIMAL
+        }
+        val debts = when (transferMode) {
+            TransferMode.MINIMAL -> generateMinimalDebtsWithTransfers(session.players, session.transfers)
+            TransferMode.CENTRAL -> {
+                val dealerId = session.settlementDealerPlayerId
+                    ?: session.players.firstOrNull()?.id
+                    ?: return session
+                generateCentralDebts(dealerId, session.players, session.transfers)
+            }
+        }
         
         MongoDB.sessions.updateOne(
             Filters.eq("numericId", numericId),

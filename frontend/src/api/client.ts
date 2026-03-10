@@ -1,4 +1,4 @@
-import type { PokerSession, CreateSessionResponse, BalanceMode, Debt, DirectTransfer } from '../types'
+import type { PokerSession, CreateSessionResponse, BalanceMode, TransferMode, Debt, DirectTransfer } from '../types'
 
 const API_BASE = '/api'
 
@@ -73,11 +73,16 @@ export const api = {
     numericId: string, 
     cashOuts: Record<string, number>, 
     balanceMode: BalanceMode,
+    transferMode: TransferMode,
+    dealerPlayerId?: string | null,
     adminPassword?: string | null
   ): Promise<PokerSession> =>
     request(`/sessions/${numericId}/settle`, {
       method: 'POST',
-      body: JSON.stringify(withAdminPassword({ cashOuts, balanceMode }, adminPassword)),
+      body: JSON.stringify(withAdminPassword(
+        { cashOuts, balanceMode, transferMode, ...(dealerPlayerId && { dealerPlayerId }) },
+        adminPassword
+      )),
     }),
 
   calculateDiff: (numericId: string, cashOuts: Record<string, number>): Promise<{ diff: number }> =>
@@ -114,11 +119,18 @@ export const api = {
   previewSettlement: (
     numericId: string,
     cashOuts: Record<string, number>,
-    balanceMode: BalanceMode
+    balanceMode: BalanceMode,
+    transferMode: TransferMode,
+    dealerPlayerId?: string | null
   ): Promise<{ debts: Debt[]; transfers: DirectTransfer[] }> =>
     request(`/sessions/${numericId}/preview`, {
       method: 'POST',
-      body: JSON.stringify({ cashOuts, balanceMode }),
+      body: JSON.stringify({
+        cashOuts,
+        balanceMode,
+        transferMode,
+        ...(dealerPlayerId && { dealerPlayerId }),
+      }),
     }),
 
   reopenSession: (numericId: string, adminPassword?: string | null): Promise<PokerSession> =>

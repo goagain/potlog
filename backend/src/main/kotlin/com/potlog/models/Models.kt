@@ -33,7 +33,11 @@ data class TransactionLog(
     val type: TransactionType,
     val amount: Long,
     val timestamp: Long = System.currentTimeMillis(),
-    val note: String? = null
+    val note: String? = null,
+    /** 转账时使用：收款人 playerId */
+    val toPlayerId: String? = null,
+    /** 关联的 DirectTransfer id，删除转账时可移除对应 log */
+    val transferId: String? = null
 )
 
 @Serializable
@@ -70,7 +74,11 @@ data class PokerSession(
     val transfers: MutableList<DirectTransfer> = mutableListOf(),
     val debts: MutableList<Debt> = mutableListOf(),
     val createdAt: Long = System.currentTimeMillis(),
-    var settledAt: Long? = null
+    var settledAt: Long? = null,
+    /** 结算时使用的转账模式（MINIMAL/CENTRAL），结算后添加/删除转账时重算债务沿用 */
+    val settlementTransferMode: String? = null,
+    /** 庄家转账模式下的庄家玩家 ID */
+    val settlementDealerPlayerId: String? = null
 ) {
     /** 返回不包含管理员密码的副本，用于 API 响应 */
     fun withoutAdminPassword() = this.copy(adminPassword = null)
@@ -119,12 +127,22 @@ data class RevokeCashOutRequest(
 data class SettleRequest(
     val cashOuts: Map<String, Long>,
     val balanceMode: BalanceMode = BalanceMode.MAX_WINNER,
+    val transferMode: TransferMode = TransferMode.MINIMAL,
+    val dealerPlayerId: String? = null,
     val adminPassword: String? = null
 )
 
+/** 平账：diff!=0 时差额由谁承担 */
 enum class BalanceMode {
-    MAX_WINNER,
-    PROPORTIONAL
+    MAX_WINNER,   // 最大赢家承担
+    PROPORTIONAL, // 赢家按比例分担（精确到1分）
+    DEALER        // 庄家承担
+}
+
+/** 转账模式：债务如何转化为转账 */
+enum class TransferMode {
+    MINIMAL,  // 最少转账次数
+    CENTRAL   // 庄家转账：输家→庄家→赢家
 }
 
 @Serializable
