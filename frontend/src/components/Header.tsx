@@ -24,8 +24,8 @@ export default function Header() {
   }
 
   return (
-    <header className="sticky top-0 z-50 w-full px-4 py-3 flex justify-end">
-      <div className="flex items-center gap-2 flex-wrap justify-end">
+    <header className="sticky top-0 z-50 w-full px-4 py-3 flex justify-end pointer-events-none">
+      <div className="flex items-center gap-2 flex-wrap justify-end pointer-events-auto">
       <a
         href={`https://github.com/${GITHUB_REPO}`}
         target="_blank"
